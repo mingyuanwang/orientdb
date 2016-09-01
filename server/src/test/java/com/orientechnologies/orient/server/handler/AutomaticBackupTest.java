@@ -2,6 +2,9 @@ package com.orientechnologies.orient.server.handler;
 
 import com.orientechnologies.common.io.OFileUtils;
 import com.orientechnologies.common.parser.OSystemVariableResolver;
+import com.orientechnologies.orient.core.db.ODatabaseDocumentInternal;
+import com.orientechnologies.orient.core.db.OrientDBFactory.DatabaseType;
+import com.orientechnologies.orient.core.db.document.ODatabaseDocument;
 import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
 import com.orientechnologies.orient.core.db.tool.ODatabaseImport;
 import com.orientechnologies.orient.core.record.impl.ODocument;
@@ -21,6 +24,7 @@ import javax.management.NotCompliantMBeanException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -31,15 +35,16 @@ import java.util.Map;
  */
 public class AutomaticBackupTest {
   private final static String DBNAME    = "testautobackup";
+  private final static String DBNAME2    = DBNAME + "2";
   private final static String BACKUPDIR = "target/backup";
   private static final String URL       = "plocal:target/" + DBNAME;
   private static final String URL2      = "plocal:target/" + DBNAME + "2";
   private final String        tempDirectory;
-  private ODatabaseDocumentTx database;
+  private ODatabaseDocument   database;
   private final OServer       server;
 
   public AutomaticBackupTest() throws ClassNotFoundException, MalformedObjectNameException, InstanceAlreadyExistsException,
-      NotCompliantMBeanException, MBeanRegistrationException, IOException {
+      NotCompliantMBeanException, MBeanRegistrationException, IOException, InstantiationException, IllegalAccessException, IllegalArgumentException, SecurityException, InvocationTargetException, NoSuchMethodException {
 
     // SET THE ORIENTDB_HOME DIRECTORY TO CHECK JSON FILE CREATION
     tempDirectory = new File("").getAbsolutePath();
@@ -53,6 +58,7 @@ public class AutomaticBackupTest {
         return result;
       }
     };
+    server.startup();
   }
 
   @BeforeClass
@@ -66,12 +72,11 @@ public class AutomaticBackupTest {
     final File f = new File(OSystemVariableResolver.resolveSystemVariables("${ORIENTDB_HOME}/config/automatic-backup.json"));
     if (f.exists())
       f.delete();
-
-    database = new ODatabaseDocumentTx(URL);
-    if (database.exists())
-      database.open("admin", "admin").drop();
-
-    database.create();
+    
+    if (server.existsDatabase(DBNAME))
+      server.dropDatabase(DBNAME);
+    server.createDatabase(DBNAME, DatabaseType.PLOCAL, null);
+    database = server.openDatabase(DBNAME, null, null, null, true);
 
     new ODocument("TestBackup").field("name", DBNAME).save();
   }
@@ -82,8 +87,9 @@ public class AutomaticBackupTest {
 
     new File(tempDirectory + "/config/automatic-backup.json").delete();
 
-    database.activateOnCurrentThread();
-    database.drop();
+    server.dropDatabase(database.getName());
+    server.shutdown();
+
   }
 
   @Test
@@ -111,11 +117,13 @@ public class AutomaticBackupTest {
 
     aBackup.sendShutdown();
 
-    final ODatabaseDocumentTx database2 = new ODatabaseDocumentTx(URL2);
-    if (database2.exists())
-      database2.open("admin", "admin").drop();
-    database2.create();
-
+    
+    if (server.existsDatabase(DBNAME2))
+      server.dropDatabase(DBNAME2);
+    server.createDatabase(DBNAME2, DatabaseType.PLOCAL, null);
+    ODatabaseDocument database2 = server.openDatabase(DBNAME2, null, null, null, true); 
+    
+    
     database2.restore(new FileInputStream(BACKUPDIR + "/fullBackup.zip"), null, null, null);
 
     Assert.assertEquals(database2.countClass("TestBackup"), 1);
@@ -179,10 +187,12 @@ public class AutomaticBackupTest {
 
     aBackup.sendShutdown();
 
-    final ODatabaseDocumentTx database2 = new ODatabaseDocumentTx(URL2);
-    if (database2.exists())
-      database2.open("admin", "admin").drop();
-    database2.create();
+    if (server.existsDatabase(DBNAME2))
+      server.dropDatabase(DBNAME2);
+    server.createDatabase(DBNAME2, DatabaseType.PLOCAL, null);
+    
+    ODatabaseDocumentInternal database2 = server.openDatabase(DBNAME2, null, null, null, true); 
+    
 
     new ODatabaseImport(database2, BACKUPDIR + "/fullExport.json.gz", null).importDatabase();
 
